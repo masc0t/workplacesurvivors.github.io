@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WORKPLACE SURVIVORS</title>
+    <style>
+        :root {
+            --vs-blue: #2a2a72;
+            --vs-gold: #ffcc00;
+            --vs-bg: #050505;
+            --exp-bar: #33ccff;
+            --hp-red: #eb0000;
+            --water: #0077ff;
+            --pixel: 4px;
+        }
+
+        body, html {
+            margin: 0; padding: 0;
+            background-color: var(--vs-bg);
+            color: white;
+            font-family: 'Courier New', monospace;
+            height: 100vh; overflow: hidden;
+            user-select: none;
+            image-rendering: pixelated;
+        }
+
+        .vs-panel {
+            background: #111;
+            border: var(--pixel) solid #333;
+            outline: var(--pixel) solid #000;
+            box-shadow: inset 0 0 15px #000;
+        }
+
+        #ui-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr 450px;
+            grid-template-rows: 100px 1fr 100px;
+            height: 100vh; gap: 12px; padding: 15px; box-sizing: border-box;
+        }
+
+        /* TOP EXP BAR */
+        #exp-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 25px;
+            background: #111; z-index: 100; border-bottom: 2px solid #000;
+        }
+        #exp-fill { height: 100%; width: 0%; background: var(--exp-bar); box-shadow: 0 0 15px var(--exp-bar); transition: width 0.3s; }
+
+        /* WIN OVERLAY */
+        #win-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 5000; pointer-events: all; background: rgba(0,0,0,0.85);
+            cursor: pointer;
+        }
+        .win-title { 
+            font-size: 8rem; font-weight: 900; color: var(--vs-gold); 
+            text-shadow: 0 0 40px var(--vs-gold); 
+            animation: slam 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+        }
+        @keyframes slam { 0% { transform: scale(5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+        /* TASK CARDS */
+        .task-grid { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; height: 85%; }
+        .task-card {
+            background: #1a1a1a; border: 2px solid #333; padding: 12px;
+            display: flex; justify-content: space-between; align-items: center;
+            cursor: pointer; position: relative; overflow: hidden;
+        }
+        .task-card.started { border-color: var(--hp-red); box-shadow: 0 0 10px var(--hp-red); }
+        
+        .hold-fill {
+            position: absolute; left: 0; bottom: 0; height: 100%; 
+            background: rgba(255, 204, 0, 0.3); width: 0%; pointer-events: none;
+        }
+
+        .gem { position: absolute; width: 14px; height: 14px; transform: rotate(45deg); z-index: 99; pointer-events: none; }
+
+        /* SHAKE & FLASH */
+        .shake-heavy { animation: shake-extreme 0.05s infinite; }
+        @keyframes shake-extreme { 0% { transform: translate(3px, 3px); } 50% { transform: translate(-3px, -3px); } 100% { transform: translate(3px, -3px); } }
+        
+        #flash-layer {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; opacity: 0; pointer-events: none; z-index: 4000;
+        }
+        .flash-trigger { animation: flash-anim 0.4s ease-out; }
+        @keyframes flash-anim { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+        .btn { background: var(--vs-blue); border: 2px solid #fff; color: white; padding: 10px; cursor: pointer; text-transform: uppercase; font-weight: bold; }
+        #timer-display { font-size: 6.5rem; font-weight: bold; color: white; line-height: 1; }
+
+        .ctrl-btn { background: #000; border: 1px solid #444; color: #666; cursor: pointer; padding: 4px 8px; font-family: inherit; margin-bottom: 2px; }
+        .ctrl-btn:hover { color: #fff; border-color: #fff; }
+        .is-perm { color: var(--vs-gold); border-color: var(--vs-gold); }
+
+        #red-death { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(180,0,0,0.95); z-index:6000; display:none; flex-direction:column; align-items:center; justify-content:center; }
+    </style>
+</head>
+<body id="stage">
+
+<div id="flash-layer"></div>
+<div id="exp-container"><div id="exp-fill"></div></div>
+
+<div id="win-overlay" onclick="dismissOverlay()">
+    <div class="win-title" id="win-text">ACE</div>
+    <div style="font-size: 2rem; color: #fff;">OBJECTIVE NEUTRALIZED</div>
+    <div style="margin-top: 20px; font-size: 0.8rem; color: #555;">(CLICK TO DISMISS)</div>
+</div>
+
+<div id="red-death">
+    <h1 style="font-size: 6rem;">RUN ENDED</h1>
+    <p>5:00 PM REACHED. RED DEATH IS HERE. LOG OFF.</p>
+</div>
+
+<div id="ui-layout">
+    <header class="vs-panel" style="grid-column: 1/4; display: flex; justify-content: space-between; align-items: center; padding: 0 20px;">
+        <div>
+            STAGE: <span id="stage-display" style="color:var(--vs-gold)">CUBICLE FOREST</span><br>
+            CURSE: <span id="curse-val" style="color:var(--hp-red)">0%</span>
+        </div>
+        <div id="clock" style="font-size: 1.5rem; font-weight: bold;">00:00:00</div>
+        <div style="text-align: right;">
+            GOLD: <span id="gold-val" style="color:var(--vs-gold)">00000</span><br>
+            LUCK: <span id="luck-val" style="color:var(--exp-bar)">25%</span>
+        </div>
+    </header>
+
+    <aside class="vs-panel" style="padding:15px;">
+        <h3 style="color:var(--vs-gold); margin-top:0;">RELIQUARY</h3>
+        <div style="border:1px solid #444; padding:10px; background:#000;">
+            <div style="font-size: 0.7rem; display: flex; justify-content: space-between;">
+                <span>HOLY WATER (84oz)</span>
+                <span id="water-text">0 / 84oz</span>
+            </div>
+            <div style="width:100%; height:12px; background:#222; margin-top:5px;"><div id="water-fill" style="height:100%; width:0%; background:var(--water);"></div></div>
+            <button class="btn" style="width:100%; margin-top:10px; font-size:0.6rem; border-color:var(--water);" onclick="logWater()">DRINK 8oz</button>
+        </div>
+        <hr style="border:0; border-top: 1px solid #444; margin: 15px 0;">
+        <div style="font-size: 0.7rem;">COMMANDER VOICE:<br><select id="voice-select" style="width:100%; background:#000; color:#fff; border:1px solid #444; margin-top:5px;"></select></div>
+    </aside>
+
+    <main class="vs-panel" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <div id="timer-display">45:00</div>
+        <div id="intervention-text" style="color:var(--hp-red); font-size: 0.8rem; font-weight: bold; min-height: 40px; padding: 5px;"></div>
+        <button class="btn" id="start-btn" style="font-size: 1.5rem;">START RUN</button>
+    </main>
+
+    <aside class="vs-panel" style="padding:15px;">
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+            <input type="text" id="task-in" placeholder="ADD MISSION..." style="flex:1; background:#000; border:1px solid #444; color:#fff; padding:8px; outline:none; font-family: inherit;">
+            <button class="btn" style="padding: 5px 12px;" onclick="addTask()">+</button>
+        </div>
+        <div class="task-grid" id="task-grid"></div>
+    </aside>
+
+    <footer class="vs-panel" style="grid-column: 1/4; display: flex; justify-content: space-around; align-items: center;">
+        <button class="btn" style="font-size: 0.7rem; border-color:#333;" onclick="toggleGhost()">GHOST MODE [ESC]</button>
+        <div style="font-size: 0.7rem; color: #444;">WORKPLACE SURVIVORS // 08:00 - 17:00</div>
+        <button class="btn" style="font-size: 0.7rem; border-color:#333;" onclick="triggerIntervention()">OVERRIDE</button>
+    </footer>
+</div>
+
+<div id="ghost-mode" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:white; color:black; z-index:10000; padding:40px; font-family:sans-serif;">
+    <h2>Resource Allocation & KPI Analysis</h2><hr><p>Synchronizing local datasets with regional cloud infrastructure for Q3 stakeholder reconciliation...</p>
+</div>
+
+<script>
+    const STAGES = ["CUBICLE FOREST", "THE INLAID KITCHEN", "BOARDROOM ABYSS", "STAIRWELL PASSAGE", "PARKING LOT WASTELAND"];
+    const DEFAULT_TASKS = ["make coffee", "let dogs out", "brush teeth", "shower", "stretch break", "go for a walk", "take out garbage", "fold laundry", "start a load of laundry"];
+    let state = { tasks: [], active: false, timer: 45 * 60, water: 0, gold: 0, combo: 0, luck: 25, curse: 0, exp: 0, date: "" };
+    let holdInterval, holdProgress = 0, currentTarget = null;
+    const synth = window.speechSynthesis;
+    let audioCtx;
+
+    function init() {
+        const loadVoices = () => {
+            const select = document.getElementById('voice-select');
+            select.innerHTML = '';
+            synth.getVoices().forEach((v, i) => {
+                const opt = document.createElement('option'); opt.value = i; opt.textContent = v.name;
+                select.appendChild(opt);
+            });
+        };
+        synth.onvoiceschanged = loadVoices; loadVoices();
+
+        const saved = JSON.parse(localStorage.getItem('workplaceSurvivorsState'));
+        const today = new Date().toDateString();
+
+        if (saved && saved.date === today) {
+            state = { ...state, ...saved };
+        } else if (saved) {
+            state.tasks = saved.tasks.filter(t => t.permanent).map(t => ({ ...t, count: 0, started: false }));
+            state.date = today;
+        } else {
+            state.tasks = DEFAULT_TASKS.map(t => ({ name: t, count: 0, permanent: true, started: false }));
+            state.date = today;
+        }
+
+        document.getElementById('stage-display').innerText = STAGES[Math.floor(Math.random()*STAGES.length)];
+        renderTasks();
+        updateStats();
+        setInterval(chronoTick, 1000);
+    }
+
+    // --- COD4 AUDIO ENGINE ---
+    function playAudio(type, freqBoost = 0) {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioCtx.currentTime;
+
+        if (type === 'hitmarker') {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(140, now);
+            g.gain.setValueAtTime(0.4, now);
+            g.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(now + 0.05);
+
+            const bufferSize = audioCtx.sampleRate * 0.05;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(0.5, now);
+            noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+            noise.connect(noiseGain); noiseGain.connect(audioCtx.destination);
+            noise.start();
+        } else if (type === 'tick') {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(85 + freqBoost, now);
+            g.gain.setValueAtTime(0.05, now);
+            g.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(now + 0.03);
+        } else if (type === 'fanfare') {
+            const notes = [523, 659, 783, 1046, 783, 1046, 1318, 1567, 2093, 2637];
+            notes.forEach((f, i) => {
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(f, now + (i * 0.08));
+                g.gain.setValueAtTime(0.06, now + (i * 0.08));
+                g.gain.exponentialRampToValueAtTime(0.0001, now + (i * 0.08) + 0.3);
+                osc.connect(g); g.connect(audioCtx.destination);
+                osc.start(now + (i * 0.08)); osc.stop(now + (i * 0.08) + 0.4);
+            });
+        }
+    }
+
+    // --- INTERACTION ---
+    function handleTaskClick(i) {
+        if (!state.onShift || state.tasks[i].started) return;
+        state.tasks[i].started = true;
+        playAudio('hitmarker');
+        renderTasks();
+    }
+
+    function startHold(i) {
+        if (!state.onShift || !state.tasks[i].started) return;
+        currentTarget = i;
+        holdProgress = 0;
+        document.getElementById('stage').classList.add('shake-heavy');
+        holdInterval = setInterval(() => {
+            holdProgress += 3.5;
+            playAudio('tick', holdProgress * 14);
+            const fills = document.querySelectorAll('.hold-fill');
+            if (fills[i]) fills[i].style.width = holdProgress + "%";
+            if (holdProgress >= 100) { completeTask(i); stopHold(); }
+        }, 40);
+    }
+
+    function stopHold() {
+        clearInterval(holdInterval);
+        document.getElementById('stage').classList.remove('shake-heavy');
+        if (holdProgress < 100 && currentTarget !== null) {
+            const fills = document.querySelectorAll('.hold-fill');
+            if (fills[currentTarget]) fills[currentTarget].style.width = "0%";
+        }
+        holdProgress = 0; currentTarget = null;
+    }
+
+    function completeTask(i) {
+        const task = state.tasks[i];
+        task.count++;
+        task.started = false;
+        state.timer = 45 * 60;
+        state.curse = Math.max(0, state.curse - 5);
+        state.combo++;
+        playAudio('fanfare');
+        triggerWinOverlay(state.combo >= 5);
+        if (state.combo >= 5) state.combo = 0;
+        spawnGems(50);
+        state.gold += 300;
+        renderTasks(); updateStats();
+    }
+
+    function triggerWinOverlay(isAce) {
+        const ov = document.getElementById('win-overlay');
+        const txt = document.getElementById('win-text');
+        ov.style.display = 'flex';
+        txt.innerText = isAce ? "SURVIVOR ACE!" : "TASK NEUTRALIZED";
+        
+        const flash = document.getElementById('flash-layer');
+        flash.classList.remove('flash-trigger');
+        void flash.offsetWidth; 
+        flash.classList.add('flash-trigger');
+
+        setTimeout(dismissOverlay, 2500);
+    }
+
+    function dismissOverlay() {
+        document.getElementById('win-overlay').style.display = 'none';
+    }
+
+    function spawnGems(count) {
+        for(let i=0; i<count; i++) {
+            const g = document.createElement('div');
+            g.className = 'gem';
+            g.style.backgroundColor = ['#00d4ff', '#00ff9d', '#ff4655', '#ffd700', '#ff00ff'][Math.floor(Math.random()*5)];
+            g.style.left = '50%'; g.style.top = '50%';
+            document.body.appendChild(g);
+            const angle = Math.random() * Math.PI * 2;
+            const force = 10 + Math.random() * 30;
+            let x = window.innerWidth/2, y = window.innerHeight/2, xv = Math.cos(angle)*force, yv = Math.sin(angle)*force;
+            const anim = setInterval(() => {
+                x += xv; y += yv; yv += 0.5;
+                g.style.left = x + 'px'; g.style.top = y + 'px';
+                if (y > window.innerHeight) {
+                    g.remove(); clearInterval(anim);
+                    state.exp += 2;
+                    if (state.exp >= 100) state.exp = 0;
+                    updateStats();
+                }
+            }, 16);
+        }
+    }
+
+    function chronoTick() {
+        const now = new Date();
+        const hrs = now.getHours(), mins = now.getMinutes();
+        if ((hrs === 17 && mins >= 0) || hrs > 17) document.getElementById('red-death').style.display = 'flex';
+        state.onShift = (hrs * 60 + mins >= 480 && hrs * 60 + mins < 1020);
+        if (state.onShift && state.active) {
+            state.timer--; state.curse += 0.02;
+            const m = Math.floor(state.timer/60), s = state.timer%60;
+            document.getElementById('timer-display').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+            if (state.timer <= 0) triggerIntervention();
+        }
+        document.getElementById('clock').innerText = now.toLocaleTimeString();
+        updateStats();
+    }
+
+    function updateStats() {
+        document.getElementById('exp-fill').style.width = state.exp + "%";
+        document.getElementById('water-fill').style.width = (state.water / 84 * 100) + "%";
+        document.getElementById('water-text').innerText = `${state.water} / 84oz`;
+        document.getElementById('curse-val').innerText = Math.floor(state.curse) + "%";
+        document.getElementById('gold-val').innerText = state.gold.toString().padStart(5, '0');
+        localStorage.setItem('workplaceSurvivorsState', JSON.stringify(state));
+    }
+
+    function logWater() {
+        state.water = Math.min(84, state.water + 8);
+        playAudio('hitmarker'); spawnGems(20); updateStats();
+    }
+
+    function triggerIntervention() {
+        if (!state.onShift) return;
+        let oldest = 0, max = -1;
+        state.tasks.forEach((t, i) => {
+            const diff = t.lastDone ? (Date.now() - t.lastDone) : 99999999;
+            if (diff > max) { max = diff; oldest = i; }
+        });
+        const msg = `SURVIVAL AT RISK. NEUTRALIZE ${state.tasks[oldest].name.toUpperCase()} IMMEDIATELY.`;
+        document.getElementById('intervention-text').innerText = msg;
+        speak(msg);
+        state.timer = 45 * 60;
+    }
+
+    function speak(t) {
+        synth.cancel();
+        const u = new SpeechSynthesisUtterance(t);
+        const voices = synth.getVoices();
+        u.voice = voices[document.getElementById('voice-select').value];
+        u.pitch = 0.5; u.rate = 0.8;
+        synth.speak(u);
+    }
+
+    function renderTasks() {
+        const grid = document.getElementById('task-grid'); grid.innerHTML = '';
+        state.tasks.forEach((task, i) => {
+            const card = document.createElement('div');
+            card.className = `task-card ${task.started ? 'started' : ''}`;
+            card.onmousedown = () => startHold(i);
+            card.onmouseup = stopHold;
+            card.onmouseleave = stopHold;
+            card.onclick = () => handleTaskClick(i);
+            card.innerHTML = `
+                <div class="hold-fill"></div>
+                <div style="z-index:2; flex-grow:1;">
+                    <div style="font-weight:bold; font-size:0.85rem;">${task.name.toUpperCase()}</div>
+                    <div style="font-size:0.6rem; color:#888">${task.started ? 'HOLD TO NEUTRALIZE' : 'CLICK TO TARGET'}</div>
+                </div>
+                <div class="task-tally">x${task.count}</div>
+                <div class="task-controls">
+                    <button class="ctrl-btn ${task.permanent ? 'is-perm' : ''}" onclick="event.stopPropagation(); togglePerm(${i})">★</button>
+                    <button class="ctrl-btn" onclick="event.stopPropagation(); undoTask(${i})">↺</button>
+                    <button class="ctrl-btn" onclick="event.stopPropagation(); delTask(${i})">✖</button>
+                </div>`;
+            grid.appendChild(card);
+        });
+    }
+
+    function undoTask(i) {
+        if (state.tasks[i].count > 0) {
+            state.tasks[i].count--; state.gold = Math.max(0, state.gold - 300);
+            renderTasks(); updateStats();
+        }
+    }
+    function togglePerm(i) { state.tasks[i].permanent = !state.tasks[i].permanent; renderTasks(); }
+    function delTask(i) { if(confirm("ABANDON MISSION?")) { state.tasks.splice(i,1); renderTasks(); } }
+    function addTask() {
+        const input = document.getElementById('task-in');
+        if(input.value) { state.tasks.push({name: input.value, count: 0, permanent: false, started: false}); input.value = ''; renderTasks(); }
+    }
+    function toggleGhost() { const g = document.getElementById('ghost-mode'); g.style.display = (g.style.display==='none'?'block':'none'); }
+
+    document.getElementById('start-btn').onclick = () => {
+        state.active = true;
+        document.getElementById('start-btn').style.display = 'none';
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        speak("STAGE SELECT COMPLETE. SURVIVE THE SHIFT.");
+    };
+
+    window.onkeydown = (e) => { if(e.key === 'Escape') toggleGhost(); };
+    init();
+</script>
+</body>
+</html>
